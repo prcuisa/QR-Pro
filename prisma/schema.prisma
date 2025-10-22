@@ -1,0 +1,123 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id              String    @id @default(cuid())
+  email           String    @unique
+  name            String?
+  password        String?
+  image           String?
+  emailVerified   DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  
+  // Relations
+  subscription    Subscription?
+  qrCodes         QRCode[]
+  scans           QRScan[]
+  
+  @@map("users")
+}
+
+model Subscription {
+  id                String    @id @default(cuid())
+  userId            String    @unique
+  plan              Plan      @default(FREE)
+  status            String    @default("active") // active, cancelled, expired
+  currentPeriodEnd  DateTime?
+  cancelAtPeriodEnd Boolean   @default(false)
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  
+  // Usage tracking
+  qrCodesGenerated  Int       @default(0)
+  dynamicQRCodes    Int       @default(0)
+  bulkGenerated     Int       @default(0)
+  
+  // Relations
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@map("subscriptions")
+}
+
+model QRCode {
+  id              String    @id @default(cuid())
+  userId          String
+  title           String?
+  type            QRType    @default(STATIC)
+  data            String    // Original data
+  shortId         String    @unique // For dynamic QR tracking
+  redirectUrl     String?   // For dynamic QR
+  isActive        Boolean   @default(true)
+  foregroundColor String    @default("#000000")
+  backgroundColor String    @default("#FFFFFF")
+  size            Int       @default(300)
+  errorCorrection String    @default("M")
+  logoUrl         String?
+  frameStyle      String    @default("none")
+  qrDataUrl       String?   // Generated QR image data URL
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  
+  // Relations
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  scans           QRScan[]
+  
+  @@map("qr_codes")
+}
+
+model QRScan {
+  id          String   @id @default(cuid())
+  qrCodeId    String
+  shortId     String
+  ipAddress   String?
+  userAgent   String?
+  country     String?
+  city        String?
+  referrer    String?
+  scannedAt   DateTime @default(now())
+  
+  // Relations
+  qrCode      QRCode   @relation(fields: [qrCodeId], references: [id], onDelete: Cascade)
+  user        User     @relation(fields: [qrCodeId], references: [id], onDelete: Cascade)
+  
+  @@map("qr_scans")
+}
+
+model APIKey {
+  id          String   @id @default(cuid())
+  userId      String
+  name        String
+  key         String   @unique
+  permissions String   @default("generate_qr")
+  isActive    Boolean  @default(true)
+  lastUsed    DateTime?
+  createdAt   DateTime @default(now())
+  expiresAt   DateTime?
+  
+  @@map("api_keys")
+}
+
+enum Plan {
+  FREE
+  PREMIUM
+  PRO
+  ENTERPRISE
+}
+
+enum QRType {
+  STATIC
+  DYNAMIC
+}
