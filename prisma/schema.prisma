@@ -13,20 +13,338 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// User model for authentication and user management
 model User {
-  id        String   @id @default(cuid())
-  email     String   @unique
-  name      String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id                String   @id @default(cuid())
+  email             String   @unique
+  name              String?
+  password          String
+  avatar            String?
+  phone             String?
+  company           String?
+  role              UserRole @default(USER)
+  status            UserStatus @default(ACTIVE)
+  emailVerified     Boolean  @default(false)
+  lastLoginAt       DateTime?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  // Relations
+  subscription      Subscription?
+  qrCodes           QRCode[]
+  teams             TeamMember[]
+  transactions      Transaction[]
+  sessions          UserSession[]
+  activityLogs      ActivityLog[]
+  bulkUploads       QRBulkUpload[]
+
+  @@map("users")
 }
 
-model Post {
-  id        String   @id @default(cuid())
-  title     String
-  content   String?
-  published Boolean  @default(false)
-  authorId  String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+// Subscription model for managing user plans
+model Subscription {
+  id                String   @id @default(cuid())
+  userId            String   @unique
+  plan              SubscriptionPlan
+  status            SubscriptionStatus @default(ACTIVE)
+  startDate         DateTime
+  endDate           DateTime?
+  cancelledAt       DateTime?
+  trialEndsAt       DateTime?
+  recurringAmount   Float
+  currency          String   @default("IDR")
+  billingCycle      BillingCycle @default(MONTHLY)
+  autoRenew         Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  // Relations
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactions      Transaction[]
+
+  @@map("subscriptions")
+}
+
+// QR Code model
+model QRCode {
+  id                String   @id @default(cuid())
+  userId            String
+  name              String
+  type              QRType
+  data              Json     // QR code data (URL, text, etc.)
+  isDynamic         Boolean  @default(false)
+  targetUrl         String?  // For dynamic QR codes
+  password          String?
+  expiresAt         DateTime?
+  customDomain      String?
+  design            Json?    // Custom design settings
+  settings          Json?    // Additional settings
+  status            QRStatus @default(ACTIVE)
+  scanLimit         Int?
+  currentScans      Int      @default(0)
+  uniqueScans       Int      @default(0)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  // Relations
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  analytics         QRAnalytics[]
+  bulkUploads       QRBulkUpload[]
+
+  @@map("qr_codes")
+}
+
+// QR Analytics model
+model QRAnalytics {
+  id                String   @id @default(cuid())
+  qrCodeId          String
+  ipAddress         String?
+  userAgent         String?
+  referer           String?
+  country           String?
+  city              String?
+  device            String?
+  browser           String?
+  os                String?
+  isUnique          Boolean  @default(false)
+  scannedAt         DateTime @default(now())
+
+  // Relations
+  qrCode            QRCode  @relation(fields: [qrCodeId], references: [id], onDelete: Cascade)
+
+  @@map("qr_analytics")
+}
+
+// Team model for collaboration
+model Team {
+  id                String   @id @default(cuid())
+  name              String
+  description       String?
+  ownerId           String
+  maxMembers        Int      @default(10)
+  status            TeamStatus @default(ACTIVE)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  // Relations
+  members           TeamMember[]
+  projects          TeamProject[]
+
+  @@map("teams")
+}
+
+// Team Member model
+model TeamMember {
+  id                String   @id @default(cuid())
+  teamId            String
+  userId            String
+  role              TeamRole @default(MEMBER)
+  invitedBy         String?
+  joinedAt          DateTime @default(now())
+
+  // Relations
+  team              Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([teamId, userId])
+  @@map("team_members")
+}
+
+// Team Project model
+model TeamProject {
+  id                String   @id @default(cuid())
+  teamId            String
+  name              String
+  description       String?
+  status            ProjectStatus @default(ACTIVE)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  // Relations
+  team              Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@map("team_projects")
+}
+
+// Transaction model for payments
+model Transaction {
+  id                String   @id @default(cuid())
+  userId            String
+  subscriptionId    String?
+  type              TransactionType
+  amount            Float
+  currency          String   @default("IDR")
+  status            TransactionStatus @default(PENDING)
+  paymentMethod     String?
+  paymentId         String?  // External payment ID
+  invoiceId         String?  @unique
+  description       String?
+  metadata          Json?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  // Relations
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subscription      Subscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+
+  @@map("transactions")
+}
+
+// Bulk Upload model
+model QRBulkUpload {
+  id                String   @id @default(cuid())
+  userId            String
+  qrCodeId          String?
+  fileName          String
+  fileSize          Int
+  totalRecords      Int
+  processedRecords  Int      @default(0)
+  failedRecords     Int      @default(0)
+  status            BulkUploadStatus @default(PENDING)
+  errors            Json?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  // Relations
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  qrCode            QRCode?  @relation(fields: [qrCodeId], references: [id], onDelete: SetNull)
+
+  @@map("qr_bulk_uploads")
+}
+
+// User Session model for authentication
+model UserSession {
+  id                String   @id @default(cuid())
+  userId            String
+  token             String   @unique
+  refreshToken      String?  @unique
+  ipAddress         String?
+  userAgent         String?
+  expiresAt         DateTime
+  createdAt         DateTime @default(now())
+
+  // Relations
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_sessions")
+}
+
+// Activity Log model for audit trail
+model ActivityLog {
+  id                String   @id @default(cuid())
+  userId            String?
+  action            String
+  resource          String?
+  resourceId        String?
+  metadata          Json?
+  ipAddress         String?
+  userAgent         String?
+  createdAt         DateTime @default(now())
+
+  // Relations
+  user              User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@map("activity_logs")
+}
+
+// Enums
+enum UserRole {
+  USER
+  ADMIN
+  SUPER_ADMIN
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+  BANNED
+}
+
+enum SubscriptionPlan {
+  FREE
+  STANDARD
+  PREMIUM
+  ENTERPRISE
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  CANCELLED
+  EXPIRED
+  TRIAL
+  PENDING
+}
+
+enum BillingCycle {
+  MONTHLY
+  YEARLY
+}
+
+enum QRType {
+  URL
+  TEXT
+  EMAIL
+  PHONE
+  SMS
+  WIFI
+  LOCATION
+  EVENT
+  VIDEO
+  IMAGE
+  VCARD
+  SOCIAL
+  PAYMENT
+}
+
+enum QRStatus {
+  ACTIVE
+  INACTIVE
+  EXPIRED
+  SUSPENDED
+  DELETED
+}
+
+enum TeamRole {
+  OWNER
+  ADMIN
+  MEMBER
+  VIEWER
+}
+
+enum TeamStatus {
+  ACTIVE
+  INACTIVE
+  ARCHIVED
+}
+
+enum ProjectStatus {
+  ACTIVE
+  COMPLETED
+  ARCHIVED
+}
+
+enum TransactionType {
+  SUBSCRIPTION
+  UPGRADE
+  DOWNGRADE
+  REFUND
+  BONUS
+  PENALTY
+}
+
+enum TransactionStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  CANCELLED
+  REFUNDED
+}
+
+enum BulkUploadStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  CANCELLED
 }
